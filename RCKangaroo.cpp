@@ -54,6 +54,9 @@ char gTamesFileName[1024];
 double gMax;
 bool gGenMode; //tames generation mode
 bool gIsOpsLimit;
+bool gSaveKangs;
+u32 gSavePeriod;
+char gWorkFileName[1024];
 
 #pragma pack(push, 1)
 struct DBRec
@@ -449,10 +452,16 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 	{
 		CheckNewPoints();
 		Sleep(10);
-		if (GetTickCount64() - tm_stats > 10 * 1000)
+		if (GetTickCount64() - tm_stats > 60 * 1000)
 		{
 			ShowStats(tm0, ops, dp_val);
 			tm_stats = GetTickCount64();
+			printf("saving work file...\r\n");
+			db.Header[0] = gRange;
+			if (db.SaveToFile(gWorkFileName))
+				printf("work saved\r\n");
+			else
+				printf("work saving failed\r\n");
 		}
 
 		if ((MaxTotalOps > 0.0) && (PntTotalOps > MaxTotalOps))
@@ -590,6 +599,19 @@ bool ParseCommandLine(int argc, char* argv[])
 			gMax = val;
 		}
 		else
+		if (strcmp(argument, "-w") == 0)
+		{
+			gSaveKangs = true;
+			strcpy(gWorkFileName, argv[ci]);
+			ci++;
+		}
+		else
+		if (strcmp(argument, "-wi") == 0)
+		{
+			gSavePeriod = atoi(argv[ci]);
+			ci++;
+		}
+		else
 		{
 			printf("error: unknown option %s\r\n", argument);
 			return false;
@@ -644,6 +666,8 @@ int main(int argc, char* argv[])
 	gMax = 0.0;
 	gGenMode = false;
 	gIsOpsLimit = false;
+	gSaveKangs = false;
+	gSavePeriod = 60;
 	memset(gGPUs_Mask, 1, sizeof(gGPUs_Mask));
 	if (!ParseCommandLine(argc, argv))
 		return 0;
