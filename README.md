@@ -38,11 +38,15 @@ When public key is solved, software displays it and also writes it to "RESULTS.T
 
 Sample command line for puzzle #85:
 
-RCKangaroo.exe -dp 16 -range 84 -start 1000000000000000000000 -pubkey 0329c4574a4fd8c810b7e42a4b398882b381bcd85e40c6883712912d167c83e73a
+./rckangaroo -dp 16 -range 84 -start 1000000000000000000000 -pubkey 0329c4574a4fd8c810b7e42a4b398882b381bcd85e40c6883712912d167c83e73a
+
+Puzzle # 135:
+
+./rckangaroo -dp 16 -range 134 -start 4000000000000000000000000000000000 -pubkey 02145d2611c823a396ef6712ce0f712f09b9b4f3135e3e0aa3230fb9b6d08d1e16
 
 Sample command to generate tames:
 
-RCKangaroo.exe -dp 16 -range 76 -tames tames76.dat -max 10
+./rckangaroo -dp 16 -range 76 -tames tames76.dat -max 10
 
 Then you can restart software with same parameters to see less K in benchmark mode or add "-tames tames76.dat" to solve some public key in 76-bit range faster.
 
