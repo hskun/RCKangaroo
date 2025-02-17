@@ -13,7 +13,7 @@
 #include "defs.h"
 #include "utils.h"
 #include "GpuKang.h"
-
+#include "dp_manager.h"
 
 EcJMP EcJumps1[JMP_CNT];
 EcJMP EcJumps2[JMP_CNT];
@@ -57,6 +57,7 @@ bool gIsOpsLimit;
 bool gSaveKangs;
 u32 gSavePeriod;
 char gWorkFileName[1024];
+DPManager* dp_manager = nullptr;
 
 #pragma pack(push, 1)
 struct DBRec
@@ -456,12 +457,9 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 		{
 			ShowStats(tm0, ops, dp_val);
 			tm_stats = GetTickCount64();
-			printf("saving work file...\r\n");
-			db.Header[0] = gRange;
-			if (db.SaveToFile(gWorkFileName))
-				printf("work saved\r\n");
-			else
-				printf("work saving failed\r\n");
+			if (!dp_manager->CheckAndSaveDPs()) {
+				printf("Failed to save DPs\r\n");
+			}
 		}
 
 		if ((MaxTotalOps > 0.0) && (PntTotalOps > MaxTotalOps))
@@ -758,15 +756,26 @@ int main(int argc, char* argv[])
 			//generate random pk
 			pk.RndBits(gRange);
 			PntToSolve = ec.MultiplyG(pk);
+dp_manager = new DPManager(&db, gWorkFileName);
+    if (!dp_manager->LoadDPs()) {
+        printf("Failed to load DPs from file\r\n");
+        return false;
+    }
+    while (!gSolved)
+    {
+        CheckNewPoints();
+        Sleep(10);
+        if (GetTickCount64() - tm_stats > 60 * 1000)
+        {
+            ShowStats(tm0, ops, dp_val);
+            tm_stats = GetTickCount64();
+            if (!dp_manager->CheckAndSaveDPs()) {
+                printf("Failed to save DPs\r\n");
+            }
+        }
 
-			if (!SolvePoint(PntToSolve, gRange, gDP, &pk_found))
-			{
-				if (!gIsOpsLimit)
-					printf("FATAL ERROR: SolvePoint failed\r\n");
-				break;
-			}
-			if (!pk_found.IsEqual(pk))
-			{
+		if (!pk_found.IsEqual(pk))
+		{
 				printf("FATAL ERROR: Found key is wrong!\r\n");
 				break;
 			}
