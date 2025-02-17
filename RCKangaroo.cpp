@@ -774,20 +774,30 @@ dp_manager = new DPManager(&db, gWorkFileName);
             }
         }
 
+		if (!SolvePoint(PntToSolve, gRange, gDP, &pk_found))
+		{
+			if (!gIsOpsLimit)
+				printf("FATAL ERROR: SolvePoint failed\r\n");
+			break;
+		}
 		if (!pk_found.IsEqual(pk))
 		{
-				printf("FATAL ERROR: Found key is wrong!\r\n");
-				break;
-			}
-			TotalOps += PntTotalOps;
-			TotalSolved++;
-			u64 ops_per_pnt = TotalOps / TotalSolved;
-			double K = (double)ops_per_pnt / pow(2.0, gRange / 2.0);
-			printf("Points solved: %d, average K: %.3f (with DP and GPU overheads)\r\n", TotalSolved, K);
-			//if (TotalSolved >= 100) break; //dbg
+			printf("FATAL ERROR: Found key is wrong!\r\n");
+			break;
 		}
+		TotalOps += PntTotalOps;
+		TotalSolved++;
+		u64 ops_per_pnt = TotalOps / TotalSolved;
+		double K = (double)ops_per_pnt / pow(2.0, gRange / 2.0);
+		printf("Points solved: %d, average K: %.3f (with DP and GPU overheads)\r\n", TotalSolved, K);
+		//if (TotalSolved >= 100) break; //dbg
+	}
 	}
 label_end:
+	if (dp_manager) {
+		delete dp_manager;
+		dp_manager = nullptr;
+	}
 	for (int i = 0; i < GpuCnt; i++)
 		delete GpuKangs[i];
 	DeInitEc();
