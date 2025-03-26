@@ -34,6 +34,7 @@ Discussion thread: https://bitcointalk.org/index.php?topic=5517607
 
 <b>-tames</b>		filename with tames. If file not found, software generates tames (option "-max" is required) and saves them to the file. If the file is found, software loads tames to speedup solving. 
 
+<b>-dpfile</b>		filename to save/load DPs. If not specified, DPs are not saved/loaded. 
 When public key is solved, software displays it and also writes it to "RESULTS.TXT" file. 
 
 Sample command line for puzzle #85:

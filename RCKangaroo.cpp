@@ -51,6 +51,7 @@ bool gStartSet;
 EcPoint gPubKey;
 u8 gGPUs_Mask[MAX_GPU_CNT];
 char gTamesFileName[1024];
+char gDpFileName[1024];
 double gMax;
 bool gGenMode; //tames generation mode
 bool gIsOpsLimit;
@@ -362,6 +363,21 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 		else
 			printf("tames loading failed\r\n");
 	}
+	if (gDpFileName[0])
+	{
+		printf("load dp file...");
+		if (db.LoadFromFile(gDpFileName))
+		{
+			printf("dp loaded\r\n");
+			if (db.Header[0] != gRange)
+			{
+				printf("loaded dp file have different range, they cannot be used, clear\r\n");
+				db.Clear();
+			}
+		}
+		else
+			printf("dp loading failed\r\n");
+	}
 
 	SetRndSeed(0); //use same seed to make tames from file compatible
 	PntTotalOps = 0;
@@ -445,6 +461,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 	}
 
 	u64 tm_stats = GetTickCount64();
+	u64 t2 = GetTickCount64();
 	while (!gSolved)
 	{
 		CheckNewPoints();
@@ -460,6 +477,16 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 			gIsOpsLimit = true;
 			printf("Operations limit reached\r\n");
 			break;
+		}
+		if (gDpFileName[0] && (GetTickCount64() - t2 > 600 * 1000))
+		{
+			printf("saving dp...");
+			db.Header[0] = gRange;
+			if (db.SaveToFile(gDpFileName))
+				printf("dp saved\r\n");
+			else
+				printf("dp saving failed\r\n");
+			t2 = GetTickCount64();
 		}
 	}
 
@@ -590,6 +617,12 @@ bool ParseCommandLine(int argc, char* argv[])
 			gMax = val;
 		}
 		else
+		if (strcmp(argument, "-dpfile") == 0)
+		{
+			strcpy(gDpFileName, argv[ci]);
+			ci++;
+		}
+		else
 		{
 			printf("error: unknown option %s\r\n", argument);
 			return false;
@@ -641,6 +674,7 @@ int main(int argc, char* argv[])
 	gRange = 0;
 	gStartSet = false;
 	gTamesFileName[0] = 0;
+	gDpFileName[0] = 0;
 	gMax = 0.0;
 	gGenMode = false;
 	gIsOpsLimit = false;
