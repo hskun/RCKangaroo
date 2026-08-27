@@ -13,6 +13,13 @@
 #include "defs.h"
 #include "utils.h"
 #include "GpuKang.h"
+#include "NetComm.h"
+
+NetClient* gNetClient = nullptr;
+std::vector<DiskDPRec> local_dp_cache;
+u64 gTotalDPsSent = 0;
+u32 gSpeed = 0;
+char gHostname[64] = "unknown";
 
 
 EcJMP EcJumps1[JMP_CNT];
@@ -34,7 +41,6 @@ CriticalSection csAddPoints;
 u8* pPntList;
 u8* pPntList2;
 volatile int PntIndex;
-TFastBase db;
 EcPoint gPntToSolve;
 EcInt gPrivKey;
 
@@ -203,76 +209,34 @@ void CheckNewPoints()
 	PntIndex = 0;
 	csAddPoints.Leave();
 
+	std::vector<DiskDPRec> dps(cnt);
 	for (int i = 0; i < cnt; i++)
 	{
-		DBRec nrec;
 		u8* p = pPntList2 + i * GPU_DP_SIZE;
-		memcpy(nrec.x, p, 12);
-		memcpy(nrec.d, p + 16, 22);
-		nrec.type = gGenMode ? TAME : p[40];
-
-		DBRec* pref = (DBRec*)db.FindOrAddDataBlock((u8*)&nrec);
-		if (gGenMode)
-			continue;
-		if (pref)
-		{
-			//in db we dont store first 3 bytes so restore them
-			DBRec tmp_pref;
-			memcpy(&tmp_pref, &nrec, 3);
-			memcpy(((u8*)&tmp_pref) + 3, pref, sizeof(DBRec) - 3);
-			pref = &tmp_pref;
-
-			if (pref->type == nrec.type)
-			{
-				if (pref->type == TAME)
-					continue;
-
-				//if it's wild, we can find the key from the same type if distances are different
-				if (*(u64*)pref->d == *(u64*)nrec.d)
-					continue;
-				//else
-				//	ToLog("key found by same wild");
+		memcpy(dps[i].x_prefix, p, 16); // Take 16 bytes of X
+		memcpy(dps[i].dist, p + 16, 22); // Distance
+		dps[i].type = gGenMode ? TAME : p[40];
+		dps[i].pad = 0;
+	}
+	
+	if (gNetClient->IsOnline()) {
+		if (!local_dp_cache.empty()) {
+			if (gNetClient->SendDPBatch(local_dp_cache)) {
+				gTotalDPsSent += local_dp_cache.size();
+				local_dp_cache.clear();
+				printf("Successfully flushed local DP cache to server. DPs sent: %llu\r\n", gTotalDPsSent);
 			}
-
-			EcInt w, t;
-			int TameType, WildType;
-			if (pref->type != TAME)
-			{
-				memcpy(w.data, pref->d, sizeof(pref->d));
-				if (pref->d[21] == 0xFF) memset(((u8*)w.data) + 22, 0xFF, 18);
-				memcpy(t.data, nrec.d, sizeof(nrec.d));
-				if (nrec.d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
-				TameType = nrec.type;
-				WildType = pref->type;
-			}
-			else
-			{
-				memcpy(w.data, nrec.d, sizeof(nrec.d));
-				if (nrec.d[21] == 0xFF) memset(((u8*)w.data) + 22, 0xFF, 18);
-				memcpy(t.data, pref->d, sizeof(pref->d));
-				if (pref->d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
-				TameType = TAME;
-				WildType = nrec.type;
-			}
-
-			bool res = Collision_SOTA(gPntToSolve, t, TameType, w, WildType, false) || Collision_SOTA(gPntToSolve, t, TameType, w, WildType, true);
-			if (!res)
-			{
-				bool w12 = ((pref->type == WILD1) && (nrec.type == WILD2)) || ((pref->type == WILD2) && (nrec.type == WILD1));
-				if (w12) //in rare cases WILD and WILD2 can collide in mirror, in this case there is no way to find K
-					;// ToLog("W1 and W2 collides in mirror");
-				else
-				{
-					printf("Collision Error\r\n");
-					gTotalErrors++;
-				}
-				continue;
-			}
-			gSolved = true;
-			break;
 		}
+		if (gNetClient->SendDPBatch(dps)) {
+			gTotalDPsSent += dps.size();
+		} else {
+			local_dp_cache.insert(local_dp_cache.end(), dps.begin(), dps.end());
+		}
+	} else {
+		local_dp_cache.insert(local_dp_cache.end(), dps.begin(), dps.end());
 	}
 }
+
 
 void ShowStats(u64 tm_start, double exp_ops, double dp_val)
 {
@@ -306,7 +270,12 @@ void ShowStats(u64 tm_start, double exp_ops, double dp_val)
 	int hours = (int)(sec - days * (3600 * 24)) / 3600;
 	int min = (int)(sec - days * (3600 * 24) - hours * 3600) / 60;
 	 
-	printf("%sSpeed: %d MKeys/s, Err: %d, DPs: %lluK/%lluK, Time: %llud:%02dh:%02dm/%llud:%02dh:%02dm\r\n", gGenMode ? "GEN: " : (IsBench ? "BENCH: " : "MAIN: "), speed, gTotalErrors, db.GetBlockCnt()/1000, est_dps_cnt/1000, days, hours, min, exp_days, exp_hours, exp_min);
+	gSpeed = speed;
+	if (gNetClient->IsOnline()) {
+		printf("WORKER: Speed: %d MKeys/s, Err: %d, DPs sent: %llu\r\n", speed, gTotalErrors, gTotalDPsSent);
+	} else {
+		printf("STANDALONE: Speed: %d MKeys/s, Err: %d, DPs cache: %zu\r\n", speed, gTotalErrors, local_dp_cache.size());
+	}
 }
 
 bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
@@ -349,18 +318,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 
 	if (!gGenMode && gTamesFileName[0])
 	{
-		printf("load tames...\r\n");
-		if (db.LoadFromFile(gTamesFileName))
-		{
-			printf("tames loaded\r\n");
-			if (db.Header[0] != gRange)
-			{
-				printf("loaded tames have different range, they cannot be used, clear\r\n");
-				db.Clear();
-			}
-		}
-		else
-			printf("tames loading failed\r\n");
+		printf("Tames loading is handled by the server now.\r\n");
 	}
 
 	SetRndSeed(0); //use same seed to make tames from file compatible
@@ -449,18 +407,39 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 	{
 		CheckNewPoints();
 		Sleep(10);
-		if (GetTickCount64() - tm_stats > 10 * 1000)
+		if (GetTickCount64() - tm_stats > 30 * 1000)
 		{
 			ShowStats(tm0, ops, dp_val);
 			tm_stats = GetTickCount64();
 		}
 
-		if ((MaxTotalOps > 0.0) && (PntTotalOps > MaxTotalOps))
-		{
-			gIsOpsLimit = true;
-			printf("Operations limit reached\r\n");
-			break;
+		gNetClient->CheckForMessages();
+		
+		HeartbeatPayload hb;
+		memset(&hb, 0, sizeof(hb));
+		strncpy(hb.hostname, gHostname, 63);
+		hb.speed_mkeys = gSpeed;
+		hb.ops = PntTotalOps;
+		hb.dps_sent = gTotalDPsSent;
+		hb.errors = gTotalErrors;
+		gNetClient->UpdateHeartbeat(hb);
+
+		NetMsgHeader header;
+		std::vector<u8> payload;
+		if (gNetClient->CheckForBroadcast(header, payload)) {
+			if (header.type == NetMsgType::SOLVED) {
+				gSolved = true;
+				memcpy(gPrivKey.data, payload.data(), 40);
+				printf("Received SOLVED broadcast from server!\r\n");
+			}
 		}
+
+		// if ((MaxTotalOps > 0.0) && (PntTotalOps > MaxTotalOps))
+		// {
+		// 	gIsOpsLimit = true;
+		// 	printf("Operations limit reached\r\n");
+		// 	break;
+		// }
 	}
 
 	printf("Stopping work ...\r\n");
@@ -477,36 +456,36 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 #endif
 	}
 
-	if (gIsOpsLimit)
-	{
-		if (gGenMode)
-		{
-			printf("saving tames...\r\n");
-			db.Header[0] = gRange; 
-			if (db.SaveToFile(gTamesFileName))
-				printf("tames saved\r\n");
-			else
-				printf("tames saving failed\r\n");
-		}
-		db.Clear();
-		return false;
-	}
-
 	double K = (double)PntTotalOps / pow(2.0, Range / 2.0);
 	printf("Point solved, K: %.3f (with DP and GPU overheads)\r\n\r\n", K);
-	db.Clear();
 	*pk_res = gPrivKey;
 	return true;
 }
 
+std::string gServerAddress = "";
+std::string gWorkerId = "";
+
 bool ParseCommandLine(int argc, char* argv[])
 {
-	int ci = 1;
+	if (argc < 2) {
+		printf("Usage: rckangaroo-worker tcp://<server_ip:port> -worker-id <id>\r\n");
+		return false;
+	}
+
+	gServerAddress = argv[1]; // Expected to be the server IP/Port
+
+	int ci = 2;
 	while (ci < argc)
 	{
 		char* argument = argv[ci];
 		ci++;
-		if (strcmp(argument, "-gpu") == 0)
+		if (strcmp(argument, "-worker-id") == 0)
+		{
+			if (ci >= argc) return false;
+			gWorkerId = argv[ci];
+			ci++;
+		}
+		else if (strcmp(argument, "-gpu") == 0)
 		{
 			if (ci >= argc)
 			{
@@ -592,23 +571,13 @@ bool ParseCommandLine(int argc, char* argv[])
 		else
 		{
 			printf("error: unknown option %s\r\n", argument);
-			return false;
+			// Ignore unknown to let the server decide most things
 		}
 	}
-	if (!gPubKey.x.IsZero())
-		if (!gStartSet || !gRange || !gDP)
-		{
-			printf("error: you must also specify -dp, -range and -start options\r\n");
-			return false;
-		}
-	if (gTamesFileName[0] && !IsFileExist(gTamesFileName))
-	{
-		if (gMax == 0.0)
-		{
-			printf("error: you must also specify -max option to generate tames\r\n");
-			return false;
-		}
-		gGenMode = true;
+
+	if (gServerAddress.empty() || gWorkerId.empty()) {
+		printf("error: you must specify the server address and -worker-id\r\n");
+		return false;
 	}
 	return true;
 }
@@ -625,6 +594,7 @@ int main(int argc, char* argv[])
 
 	printf("This software is free and open-source: https://github.com/RetiredC\r\n");
 	printf("It demonstrates fast GPU implementation of SOTA Kangaroo method for solving ECDLP\r\n");
+	printf("WORKER node.\r\n");
 
 #ifdef _WIN32
 	printf("Windows version\r\n");
@@ -653,6 +623,48 @@ int main(int argc, char* argv[])
 	if (!GpuCnt)
 	{
 		printf("No supported GPUs detected, exit\r\n");
+		return 0;
+	}
+
+#ifdef _WIN32
+	DWORD size = sizeof(gHostname);
+	GetComputerNameA(gHostname, &size);
+#else
+	gethostname(gHostname, sizeof(gHostname));
+#endif
+
+	gNetClient = new NetClient(gWorkerId);
+	
+	// Ensure the server address prefix is omitted for Connect if it expects IP
+	// Connect method in NetComm actually prepends "tcp://" if given an IP, wait, let's look at it.
+	// We'll strip "tcp://" if provided by the user.
+	std::string server_ip = gServerAddress;
+	if (server_ip.find("tcp://") == 0) {
+		server_ip = server_ip.substr(6);
+	}
+	size_t colon_pos = server_ip.find(":");
+	if (colon_pos != std::string::npos) {
+		server_ip = server_ip.substr(0, colon_pos); // Strip port as NetComm hardcodes port 5555/5556
+	}
+
+	if (!gNetClient->Connect(server_ip)) {
+		printf("Failed to connect to server at %s\r\n", server_ip.c_str());
+		return 0;
+	}
+	printf("Connected to server at %s\r\n", server_ip.c_str());
+
+	printf("Requesting task parameters from Server...\r\n");
+	NetTaskParams task_params;
+	if (gNetClient->RequestTask(task_params)) {
+		memcpy(gPubKey.x.data, task_params.pubkey_x, 32);
+		memcpy(gPubKey.y.data, task_params.pubkey_y, 32);
+		memcpy(gStart.data, task_params.start, 32);
+		gRange = task_params.range;
+		gDP = task_params.dp;
+		gStartSet = true;
+		printf("Task parameters received.\r\n");
+	} else {
+		printf("Failed to receive task parameters from Server.\r\n");
 		return 0;
 	}
 
@@ -760,5 +772,6 @@ label_end:
 	DeInitEc();
 	free(pPntList2);
 	free(pPntList);
+	delete gNetClient;
 }
 

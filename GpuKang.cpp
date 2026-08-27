@@ -117,7 +117,7 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 	err = cudaMalloc((void**)&Kparams.Jumps2, JMP_CNT * 96);
 	if (err != cudaSuccess)
 	{
-		printf("GPU %d Allocate Jumps1 memory failed: %s\n", CudaIndex, cudaGetErrorString(err));
+		printf("GPU %d Allocate Jumps2 memory failed: %s\n", CudaIndex, cudaGetErrorString(err));
 		return false;
 	}
 
@@ -170,7 +170,7 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 	err = cudaMalloc((void**)&Kparams.LoopTable, size);
 	if (err != cudaSuccess)
 	{
-		printf("GPU %d Allocate LastPnts memory failed: %s\n", CudaIndex, cudaGetErrorString(err));
+		printf("GPU %d Allocate LoopTable memory failed: %s\n", CudaIndex, cudaGetErrorString(err));
 		return false;
 	}
 

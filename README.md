@@ -46,6 +46,21 @@ RCKangaroo.exe -dp 16 -range 76 -tames tames76.dat -max 10
 
 Then you can restart software with same parameters to see less K in benchmark mode or add "-tames tames76.dat" to solve some public key in 76-bit range faster.
 
+Command to start server for puzzle #75:
+```
+./rckangaroo-server -dp 16 -range 74 -start 4000000000000000000 -pubkey 03726b574f193e374686d8e12bc6e4142adeb06770e0a2856f5e4ad89f66044755 -data ./data1 -data ./data2 -data ./data3 -data ./data4 -data ./data5 -data ./data6 -data ./data7 -data ./data8 -flush-interval 60
+```
+
+#140:
+```
+./rckangaroo-server -dp 20 -range 139 -start 80000000000000000000000000000000000 -pubkey 031f6a332d3c5c4f2de2378c012f429cd109ba07d69690c6c701b6bb87860d6640 -data ./data1 -data ./data2 -data ./data3 -data ./data4 -data ./data5 -data ./data6 -data ./data7 -data ./data8 -flush-interval 3600
+```
+
+Command to start worker:
+```
+./rckangaroo-worker tcp://127.0.0.1:5555 -worker-id 1
+```
+
 <b>Some notes:</b>
 
 Fastest ECDLP solvers will always use SOTA/SOTA+ method, as it's 1.4/1.5 times faster and requires less memory for DPs compared to the best 3-way kangaroos with K=1.6. 
