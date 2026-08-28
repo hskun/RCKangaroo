@@ -90,14 +90,19 @@ bool NetClient::RequestTask(NetTaskParams& out_params) {
                     if (more) {
                         zmq_msg_t payload_msg;
                         zmq_msg_init(&payload_msg);
-                        zmq_msg_recv(&payload_msg, dealer_sock, 0);
-                        memcpy(&out_params, zmq_msg_data(&payload_msg), sizeof(NetTaskParams));
+                        int payload_rc = zmq_msg_recv(&payload_msg, dealer_sock, 0);
+                        bool valid_payload = payload_rc == (int)sizeof(NetTaskParams) &&
+                                             zmq_msg_size(&payload_msg) == sizeof(NetTaskParams);
+                        if (valid_payload)
+                            memcpy(&out_params, zmq_msg_data(&payload_msg), sizeof(NetTaskParams));
                         zmq_msg_close(&payload_msg);
-                        zmq_msg_close(&msg);
-                        // Restore to no-timeout for normal operation
-                        int no_timeout = -1;
-                        zmq_setsockopt(dealer_sock, ZMQ_RCVTIMEO, &no_timeout, sizeof(no_timeout));
-                        return true;
+                        if (valid_payload) {
+                            zmq_msg_close(&msg);
+                            // Restore to no-timeout for normal operation
+                            int no_timeout = -1;
+                            zmq_setsockopt(dealer_sock, ZMQ_RCVTIMEO, &no_timeout, sizeof(no_timeout));
+                            return true;
+                        }
                     }
                 }
             }
@@ -206,6 +211,8 @@ bool NetClient::SendDPBatch(const std::vector<DiskDPRec>& dps) {
 
 bool NetClient::CheckForBroadcast(NetMsgHeader& out_header, std::vector<u8>& out_payload) {
     if (!sub_sock) return false;
+    out_payload.clear();
+    bool valid_message = true;
 
     zmq_msg_t msg_header;
     zmq_msg_init(&msg_header);
@@ -230,14 +237,29 @@ bool NetClient::CheckForBroadcast(NetMsgHeader& out_header, std::vector<u8>& out
         zmq_msg_t msg_payload;
         zmq_msg_init(&msg_payload);
         zmq_msg_recv(&msg_payload, sub_sock, 0);
-        // Bug #6 fix: Validate actual payload size to prevent out-of-bounds read
         size_t actual_size = zmq_msg_size(&msg_payload);
-        size_t copy_size = (actual_size < out_header.payload_size) ? actual_size : out_header.payload_size;
-        out_payload.resize(copy_size);
-        memcpy(out_payload.data(), zmq_msg_data(&msg_payload), copy_size);
+        if (actual_size != out_header.payload_size) {
+            valid_message = false;
+        } else {
+            out_payload.resize(actual_size);
+            memcpy(out_payload.data(), zmq_msg_data(&msg_payload), actual_size);
+        }
         zmq_msg_close(&msg_payload);
+    } else if (out_header.payload_size > 0) {
+        valid_message = false;
     }
-    return true;
+
+    int more_final;
+    size_t more_size_final = sizeof(more_final);
+    zmq_getsockopt(sub_sock, ZMQ_RCVMORE, &more_final, &more_size_final);
+    while (more_final) {
+        zmq_msg_t discard;
+        zmq_msg_init(&discard);
+        zmq_msg_recv(&discard, sub_sock, 0);
+        zmq_msg_close(&discard);
+        zmq_getsockopt(sub_sock, ZMQ_RCVMORE, &more_final, &more_size_final);
+    }
+    return valid_message;
 }
 
 NetServer::NetServer() : ctx(nullptr), router_sock(nullptr), pub_sock(nullptr) {}
@@ -281,6 +303,8 @@ bool NetServer::Start() {
 
 bool NetServer::ReceiveMessage(std::string& client_id, NetMsgHeader& out_header, std::vector<u8>& out_payload) {
     if (!router_sock) return false;
+    out_payload.clear();
+    bool valid_message = true;
 
     zmq_msg_t msg_id;
     zmq_msg_init(&msg_id);
@@ -301,6 +325,7 @@ bool NetServer::ReceiveMessage(std::string& client_id, NetMsgHeader& out_header,
     } else {
         out_header.type = NetMsgType::STATUS; // Error fallback
         out_header.payload_size = 0;
+        valid_message = false;
     }
     zmq_msg_close(&msg_header);
 
@@ -310,19 +335,26 @@ bool NetServer::ReceiveMessage(std::string& client_id, NetMsgHeader& out_header,
     if (more && out_header.payload_size > 0) {
         zmq_msg_t msg_payload;
         zmq_msg_init(&msg_payload);
-        zmq_msg_recv(&msg_payload, router_sock, 0);
+        int payload_rc = zmq_msg_recv(&msg_payload, router_sock, 0);
+        size_t actual_size = zmq_msg_size(&msg_payload);
+        bool valid_payload = payload_rc >= 0 && actual_size == out_header.payload_size;
+        valid_message = valid_message && valid_payload;
         
-        if (out_header.type == NetMsgType::HEARTBEAT && out_header.payload_size == sizeof(HeartbeatPayload)) {
+        if (valid_payload && out_header.type == NetMsgType::HEARTBEAT && out_header.payload_size == sizeof(HeartbeatPayload)) {
             HeartbeatPayload hb;
             memcpy(&hb, zmq_msg_data(&msg_payload), sizeof(HeartbeatPayload));
             
             u64 now = GetTickCount64();
             connected_workers[client_id] = {now, true, hb};
-        } else {
+        } else if (valid_payload) {
             out_payload.resize(out_header.payload_size);
             memcpy(out_payload.data(), zmq_msg_data(&msg_payload), out_header.payload_size);
         }
         zmq_msg_close(&msg_payload);
+        if (!valid_payload)
+            out_payload.clear();
+    } else if (out_header.payload_size > 0) {
+        valid_message = false;
     }
 
     // Bug #5 fix: Drain any remaining frames to prevent socket stream corruption
@@ -336,7 +368,7 @@ bool NetServer::ReceiveMessage(std::string& client_id, NetMsgHeader& out_header,
         zmq_msg_close(&discard);
         zmq_getsockopt(router_sock, ZMQ_RCVMORE, &more_final, &mfs);
     }
-    return true;
+    return valid_message;
 }
 
 bool NetServer::BroadcastSolved(const std::vector<u8>& private_key) {
