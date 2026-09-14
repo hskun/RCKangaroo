@@ -150,13 +150,13 @@ void* kang_thr_proc(void* data)
 	return 0;
 }
 #endif
-void AddPointsToList(u32* data, int pnt_cnt, u32 KangCnt, u64 ops_cnt, int JumperInd)
+void AddPointsToList(u32* data, int pnt_cnt, u32 KangCnt, u64 ops_cnt, [[maybe_unused]] int JumperInd)
 {
 	for (int i = 0; i < pnt_cnt; i++) //convert KangInd to KangType
 	{
 		u32* p = data + (GPU_DP_SIZE / 4) * i;
 		int KangInd = p[10];
-		p[10] = (KangInd < KangCnt / 3) ? TAME : WILD;
+		p[10] = (KangInd < (int)(KangCnt / 3)) ? TAME : WILD;
 
 		//optional: restart kang after DP
 		//GpuKangs[JumperInd]->ToRestartKangaroo(KangInd);
@@ -174,7 +174,7 @@ void AddPointsToList(u32* data, int pnt_cnt, u32 KangCnt, u64 ops_cnt, int Jumpe
 	csAddPoints.Leave();
 }
 
-bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, int WildType, bool IsNeg)
+bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, [[maybe_unused]] int WildType, bool IsNeg)
 {
 	if (IsNeg)
 		t.Neg();
@@ -444,11 +444,11 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 
 #ifdef _WIN32
 	HANDLE thr_handles[MAX_GPU_CNT];
+	u32 ThreadID;
 #else
 	pthread_t thr_handles[MAX_GPU_CNT];
 #endif
 
-	u32 ThreadID;
 	gSolved = false;
 	ThrCnt = GpuCnt;
 	for (int i = 0; i < GpuCnt; i++)

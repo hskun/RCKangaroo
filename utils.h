@@ -40,7 +40,7 @@
 	#define HHANDLER		pthread_t
  
 	u64 GetTickCount64();
-	static void Sleep(int x) { usleep(x * 1000); }      
+	inline void Sleep(int x) { usleep(x * 1000); }
     void _BitScanReverse64(u32* index, u64 msk);
     void _BitScanForward64(u32* index, u64 msk);       
     typedef __uint128_t uint128_t;

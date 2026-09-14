@@ -93,7 +93,7 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 		return false;
 	}
 	size = L2size;
-	if (size > persistingL2CacheMaxSize)
+	if (size > (u64)persistingL2CacheMaxSize)
 		size = persistingL2CacheMaxSize;
 	err = cudaDeviceSetLimit(cudaLimitPersistingL2CacheSize, size); // set max allowed size for L2
 	//persisting for L2
@@ -400,7 +400,6 @@ void RCGpuKang::DoRestartKangs()
 		WildRange.Add(x32);
 
 	cudaError_t err;
-	u64 t0 = GetTickCount64();
 	for (int i = 0; i < (int)lsToRestart.size(); i++)
 	{
 		int KangInd = lsToRestart[i];
@@ -523,7 +522,7 @@ bool RCGpuKang::Start()
 		printf("GPU %d, cudaMemcpy failed: %s\n", CudaIndex, cudaGetErrorString(err));
 		return false;
 	}
-/**/
+*/
 	//but it's faster to calc them on GPU
 	u8 buf_PntWild[64];
 	PntWild.SaveToBuffer64(buf_PntWild);
@@ -535,7 +534,12 @@ bool RCGpuKang::Start()
 			memcpy(RndPnts[i].x, buf_PntWild, 64);
 	}
 
-	u8* gpu_pnts = (u8*)malloc(96 * KangCnt);
+	u8* gpu_pnts = (u8*)malloc((size_t)KangCnt * 96);
+	if (!gpu_pnts)
+	{
+		printf("GPU %d, malloc gpu_pnts failed\n", CudaIndex);
+		return false;
+	}
 	for (int i = 0; i < KangCnt; i++)
 	{
 		memcpy(gpu_pnts + 32 * i, RndPnts[i].x, 32);

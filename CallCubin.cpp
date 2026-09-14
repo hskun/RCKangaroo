@@ -20,7 +20,7 @@ TCubinCall::~TCubinCall()
 bool TCubinCall::LoadCubin(const char* fn)
 {
 	CUresult res = ::cuModuleLoad(&cuModule, fn);
-	if (res != cudaSuccess)
+	if (res != CUDA_SUCCESS)
 	{
 		printf("srv cuModuleLoad Error: %d\n", res);
 		return false;
@@ -51,7 +51,7 @@ bool TCubinCall::CallKernel(TCallKernelParams params)
 	}
 
 	CUresult err = ::cuFuncSetAttribute(f, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, params.sharedSize);
-	if (err != cudaSuccess)
+	if (err != CUDA_SUCCESS)
 	{
 		free(args);
 		printf("cudaFuncSetAttribute failed, err %d\r\n", err);
