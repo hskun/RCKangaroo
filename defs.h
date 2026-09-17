@@ -41,7 +41,7 @@ typedef char i8;
 
 #define DPTABLE_MAX_CNT		16
 
-#define MAX_CNT_LIST		(512 * 1024)
+#define MAX_CNT_LIST		(4 * 1024 * 1024)
 
 #define DP_FLAG				0x0800
 #define INV_FLAG			0x0200
@@ -50,6 +50,15 @@ typedef char i8;
 #define MD_LEN				10
 
 //#define DEBUG_MODE
+
+#pragma pack(push, 1)
+struct DiskDPRec {
+    u8 x_prefix[16];
+    u8 dist[22];
+    u8 type;
+    u8 pad; // Explicit padding to 40 bytes
+};
+#pragma pack(pop)
 
 //gpu kernel parameters
 struct TKparams

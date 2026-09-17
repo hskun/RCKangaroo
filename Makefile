@@ -1,29 +1,39 @@
-CC := g++
-NVCC := /usr/local/cuda-12.0/bin/nvcc
-CUDA_PATH ?= /usr/local/cuda-12.0
+CXX := g++
+CUDA_PATH ?= /usr/local/cuda
+NVCC := $(CUDA_PATH)/bin/nvcc
 
-CCFLAGS := -O3 -I$(CUDA_PATH)/include
-NVCCFLAGS := -O3 -gencode=arch=compute_89,code=compute_89 -gencode=arch=compute_86,code=compute_86 -gencode=arch=compute_75,code=compute_75 -gencode=arch=compute_61,code=compute_61
-LDFLAGS := -L$(CUDA_PATH)/lib64 -lcudart -pthread
+CXXFLAGS := -O3 -std=c++20 -I$(CUDA_PATH)/include -I. -Wall -Wextra -Wpedantic -Wno-unknown-pragmas
+NVCCFLAGS := -O3 -std=c++20 -I. -gencode=arch=compute_89,code=compute_89
+CUDA_LDFLAGS := -L$(CUDA_PATH)/lib64 -lcudart -lcuda -pthread -ldl -lrt
+COMMON_LDFLAGS := -pthread -lrt
+ZMQ_LDFLAGS := -lzmq
 
-CPU_SRC := RCKangaroo.cpp GpuKang.cpp Ec.cpp utils.cpp
-GPU_SRC := RCGpuCore.cu
+COMMON_CPP_OBJS := GpuKang.o Ec.o utils.o CallCubin.o
+COMMON_CU_OBJS := RCGpuCore.o
 
-CPP_OBJECTS := $(CPU_SRC:.cpp=.o)
-CU_OBJECTS := $(GPU_SRC:.cu=.o)
+TARGET_STANDALONE := rckangaroo
+TARGET_WORKER := rckangaroo-worker
+TARGET_SERVER := rckangaroo-server
 
-TARGET := rckangaroo
+all: $(TARGET_STANDALONE) $(TARGET_WORKER) $(TARGET_SERVER) rckangaroo-worker
 
-all: $(TARGET)
+$(TARGET_STANDALONE): RCKangaroo.o $(COMMON_CPP_OBJS) $(COMMON_CU_OBJS)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(CUDA_LDFLAGS)
 
-$(TARGET): $(CPP_OBJECTS) $(CU_OBJECTS)
-	$(CC) $(CCFLAGS) -o $@ $^ $(LDFLAGS)
+$(TARGET_WORKER): rckangarooWorker.o $(COMMON_CPP_OBJS) $(COMMON_CU_OBJS) NetComm.o
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(CUDA_LDFLAGS) $(ZMQ_LDFLAGS)
+
+$(TARGET_SERVER): RCKangarooServer.o Ec.o utils.o NetComm.o StorageManager.o
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(COMMON_LDFLAGS) $(ZMQ_LDFLAGS)
 
 %.o: %.cpp
-	$(CC) $(CCFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 %.o: %.cu
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(CPP_OBJECTS) $(CU_OBJECTS)
+	rm -f *.o
+# 	rm -f *.o $(TARGET_STANDALONE) $(TARGET_WORKER) $(TARGET_SERVER)
+
+.PHONY: all clean
